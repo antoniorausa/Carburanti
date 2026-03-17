@@ -194,6 +194,7 @@ def processa_excel(file_bytes: bytes) -> bytes:
             ws.cell(row=1, column=ci, value=h).font = Font(bold=True)
 
         # Righe dati
+        righe_gialle = []   # traccia esplicitamente le righe PDV evidenziate
         for ri, riga in enumerate(righe_elaborate, 2):
             pdv_key = riga[0]
             is_pdv = pdv_key in pdv_selezionati
@@ -203,6 +204,8 @@ def processa_excel(file_bytes: bytes) -> bytes:
                     cell.number_format = "0.000"
                 if is_pdv:
                     cell.fill = PatternFill("solid", fgColor="FFFF00")
+            if is_pdv:
+                righe_gialle.append(ri)
 
         # Autofit colonne
         for col in ws.columns:
@@ -212,12 +215,7 @@ def processa_excel(file_bytes: bytes) -> bytes:
         # ── Grafico ──────────────────────────────────────────────────────────
         ultima_riga = len(righe_elaborate) + 1
         if ultima_riga > 1 and carb_attivi:
-            righe_grafico = [
-                ri for ri in range(2, ultima_riga + 1)
-                if ws.cell(ri, 1).fill.fgColor.rgb in ("FFFF00", "FFFFFF00")
-            ]
-            if not righe_grafico:
-                righe_grafico = list(range(2, ultima_riga + 1))
+            righe_grafico = righe_gialle if righe_gialle else list(range(2, ultima_riga + 1))
 
             n_punti = len(righe_grafico) + 1  # +1 per MEDIA
             riga_base_temp = ultima_riga + 3
