@@ -109,6 +109,11 @@ def _parse_prezzo(val):
 
 
 def _leggi_sorgente_xls(file_bytes):
+    # Controlla se il file è in realtà HTML mascherato da .xls (export da gestionali web)
+    sniff = file_bytes[:20].strip().lower()
+    if sniff.startswith(b"<") or b"<!do" in sniff or b"<html" in sniff:
+        return _leggi_sorgente_html_xls(file_bytes)
+
     wb = xlrd.open_workbook(file_contents=file_bytes)
     ws = wb.sheet_by_index(0)
     skip = RIGA_INTESTAZIONE - 1  # 0-based: salta le prime 7 righe
@@ -126,6 +131,22 @@ def _leggi_sorgente_xls(file_bytes):
                 row.append(str(cell.value).strip() if cell.value != "" else None)
         rows.append(row)
     return rows  # rows[0]=intestazione, rows[1:]=dati
+
+
+def _leggi_sorgente_html_xls(file_bytes):
+    """Gestisce file .xls che sono in realtà HTML (export da gestionali web)."""
+    import pandas as pd
+    skip = RIGA_INTESTAZIONE - 1  # righe da saltare prima dell intestazione
+    try:
+        tables = pd.read_html(io.BytesIO(file_bytes), header=0, skiprows=skip - 1, encoding="utf-8")
+    except Exception:
+        tables = pd.read_html(io.BytesIO(file_bytes), header=0, skiprows=skip - 1, encoding="latin-1")
+    df = tables[0]
+    # Converti in lista di liste: prima riga = intestazione, resto = dati
+    rows = [list(df.columns)]
+    for _, r in df.iterrows():
+        rows.append([None if (str(v) in ("nan", "None", "")) else v for v in r])
+    return rows
 
 
 def _leggi_sorgente_xlsx(file_bytes):
