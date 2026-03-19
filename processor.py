@@ -6,14 +6,14 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, Reference, Series
+from openpyxl.chart.data_source import NumDataSource, NumRef
+from openpyxl.chart.label import DataLabel, DataLabelList
 
-# Riga Excel dove si trova l'intestazione nel file sorgente (1-based)
 RIGA_INTESTAZIONE = 8
 
-# Percorso dei CSV fissi nella cartella del progetto
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MAPPING_CSV    = os.path.join(BASE_DIR, "mapping.csv")
-PDV_CSV        = os.path.join(BASE_DIR, "pdv_selezionati.csv")
+MAPPING_CSV = os.path.join(BASE_DIR, "mapping.csv")
+PDV_CSV     = os.path.join(BASE_DIR, "pdv_selezionati.csv")
 
 COLORI_CATEGORIA = {
     "CAD":       "FF9999",
@@ -40,16 +40,14 @@ def _pulisci_nome_foglio(nome):
 
 
 def _leggi_mapping_csv():
-    """
-    Legge mapping.csv con colonne:
-    codice, nome, categoria, distanza_max, gasolio, benzina, gpl, metano
-    """
     mapping, colori, distanze, carburanti = {}, {}, {}, {}
     if not os.path.exists(MAPPING_CSV):
         return mapping, colori, distanze, carburanti
     with open(MAPPING_CSV, newline="", encoding="utf-8-sig") as f:
-        reader = csv.reader(f, delimiter=";")
-        next(reader, None)  # salta intestazione
+        sample = f.read(1024); f.seek(0)
+        sep = "\t" if "\t" in sample else ";"
+        reader = csv.reader(f, delimiter=sep)
+        next(reader, None)
         for row in reader:
             if not row or not row[0].strip():
                 continue
@@ -67,21 +65,14 @@ def _leggi_mapping_csv():
 
 
 def _leggi_pdv_csv():
-    """
-    Legge pdv_selezionati.csv.
-    Colonne attese (sep TAB o ;):
-      Indirizzo | Insegna | PlayerID | Nome | Consorzio
-    La chiave di match e la colonna 1 (Indirizzo), esattamente come nel VBA originale.
-    """
     pdv = set()
     if not os.path.exists(PDV_CSV):
         return pdv
     with open(PDV_CSV, newline="", encoding="utf-8-sig") as f:
-        # Rileva separatore: tab o punto e virgola
         sample = f.read(1024); f.seek(0)
-        sep = "	" if "	" in sample else ";"
+        sep = "\t" if "\t" in sample else ";"
         reader = csv.reader(f, delimiter=sep)
-        next(reader, None)  # salta intestazione
+        next(reader, None)
         for row in reader:
             if row and row[0].strip():
                 pdv.add(row[0].strip())
@@ -99,24 +90,29 @@ def _parse_distanza(val):
 
 
 def _parse_prezzo(val):
+    """
+    Gestisce sia prezzi già decimali (1.709) sia interi gonfiati (1709).
+    Se il valore è > 10, lo divide per 1000 (es. 1709 → 1.709).
+    """
     if val is None or str(val).strip() in ("-", "", "None"):
         return 0.0
     s = str(val).replace("'", "").replace(",", ".").strip()
     try:
-        return float(s)
+        v = float(s)
+        if v > 10:
+            v = v / 1000.0
+        return round(v, 3)
     except ValueError:
         return 0.0
 
 
 def _leggi_sorgente_xls(file_bytes):
-    # Controlla se il file è in realtà HTML mascherato da .xls (export da gestionali web)
     sniff = file_bytes[:20].strip().lower()
     if sniff.startswith(b"<") or b"<!do" in sniff or b"<html" in sniff:
         return _leggi_sorgente_html_xls(file_bytes)
-
     wb = xlrd.open_workbook(file_contents=file_bytes)
     ws = wb.sheet_by_index(0)
-    skip = RIGA_INTESTAZIONE - 1  # 0-based: salta le prime 7 righe
+    skip = RIGA_INTESTAZIONE - 1
     rows = []
     for i in range(skip, ws.nrows):
         row = []
@@ -130,19 +126,17 @@ def _leggi_sorgente_xls(file_bytes):
             else:
                 row.append(str(cell.value).strip() if cell.value != "" else None)
         rows.append(row)
-    return rows  # rows[0]=intestazione, rows[1:]=dati
+    return rows
 
 
 def _leggi_sorgente_html_xls(file_bytes):
-    """Gestisce file .xls che sono in realtà HTML (export da gestionali web)."""
     import pandas as pd
-    skip = RIGA_INTESTAZIONE - 1  # righe da saltare prima dell intestazione
+    skip = RIGA_INTESTAZIONE - 1
     try:
         tables = pd.read_html(io.BytesIO(file_bytes), header=0, skiprows=skip - 1, encoding="utf-8")
     except Exception:
         tables = pd.read_html(io.BytesIO(file_bytes), header=0, skiprows=skip - 1, encoding="latin-1")
     df = tables[0]
-    # Converti in lista di liste: prima riga = intestazione, resto = dati
     rows = [list(df.columns)]
     for _, r in df.iterrows():
         rows.append([None if (str(v) in ("nan", "None", "")) else v for v in r])
@@ -154,29 +148,27 @@ def _leggi_sorgente_xlsx(file_bytes):
     ws = wb.worksheets[0]
     all_rows = list(ws.values)
     skip = RIGA_INTESTAZIONE - 1
-    return [list(r) for r in all_rows[skip:]]  # rows[0]=intestazione, rows[1:]=dati
+    return [list(r) for r in all_rows[skip:]]
+
+
+def _hex_to_rgb_tuple(hex_color):
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
 
 
 def processa_excel(file_bytes, filename="file.xls"):
-    # ── Carica CSV fissi ─────────────────────────────────────────────────────
     mapping, colori, distanze, carburanti = _leggi_mapping_csv()
     pdv_selezionati = _leggi_pdv_csv()
 
-    # ── Leggi sorgente ───────────────────────────────────────────────────────
     is_xls = filename.lower().endswith(".xls") and not filename.lower().endswith(".xlsx")
     src_rows = _leggi_sorgente_xls(file_bytes) if is_xls else _leggi_sorgente_xlsx(file_bytes)
-    data_rows = src_rows[1:]  # salta intestazione
+    data_rows = src_rows[1:]
 
-    # Colonne sorgente (0-based):
-    # 0=Codice gestore, 1=Comune PDV, 2=Indirizzo PDV
-    # 3=Insegna, 4=Comune conc., 5=Indirizzo conc., 6=Distanza
-    # 7=Gasolio, 8=Benzina, 9=GPL, 10=Metano
     IDX_CODICE   = 0
     IDX_COMUNE   = 1
     IDX_DISTANZA = 6
     IDX_PREZZI   = [7, 8, 9, 10]
 
-    # Coppie univoche ordinate per nome mapping
     coppie_viste = {}
     for r in data_rows:
         k1 = str(r[IDX_CODICE]).strip() if r[IDX_CODICE] else ""
@@ -190,7 +182,6 @@ def processa_excel(file_bytes, filename="file.xls"):
         key=lambda x: mapping.get(x[0], "ZZ_" + x[0])
     )
 
-    # ── Nuovo workbook output ────────────────────────────────────────────────
     wb_out = Workbook()
     wb_out.remove(wb_out.active)
 
@@ -240,7 +231,7 @@ def processa_excel(file_bytes, filename="file.xls"):
                 dist,
             ]
             for i, _ in carb_attivi:
-                riga_out.append(round(prezzi[i], 3) if prezzi[i] > 0 else None)
+                riga_out.append(prezzi[i] if prezzi[i] > 0 else None)
             righe_elaborate.append(riga_out)
 
         righe_elaborate.sort(key=lambda x: x[3])
@@ -260,19 +251,18 @@ def processa_excel(file_bytes, filename="file.xls"):
             cell_idx.fill = PatternFill("solid", fgColor=colore_hex)
         riga_indice += 1
 
-        intestazione = ["Insegna", "Comune", "Indirizzo", "Distanza (km)"] + \
+        intestazione = ["Insegna", "Comune", "Indirizzo", "Distanza (min)"] + \
                        [n for _, n in carb_attivi]
         for ci, h in enumerate(intestazione, 1):
             ws.cell(row=1, column=ci, value=h).font = Font(bold=True)
 
         righe_gialle = []
         for ri, riga in enumerate(righe_elaborate, 2):
-            # riga[2] = Indirizzo concorrente (colonna 3 nel foglio dest = chiave PDV come nel VBA)
             is_pdv = riga[2] in pdv_selezionati
             for ci, val in enumerate(riga, 1):
                 cell = ws.cell(row=ri, column=ci, value=val)
                 if ci >= 5:
-                    cell.number_format = "0.000"
+                    cell.number_format = '0.000'
                 if is_pdv:
                     cell.fill = PatternFill("solid", fgColor="FFFF00")
             if is_pdv:
@@ -292,12 +282,17 @@ def processa_excel(file_bytes, filename="file.xls"):
             ws_g = wb_out.create_sheet(nome_ws_g)
             ws_g.sheet_state = "hidden"
 
+            # Riga 1: etichette (Insegna - Indirizzo, Comune)
             ws_g.cell(1, 1, "Serie")
             for ci, ri in enumerate(righe_grafico, 2):
-                lbl = f"{ws.cell(ri, 1).value} - {ws.cell(ri, 2).value}"
+                insegna  = ws.cell(ri, 1).value or ""
+                indirizzo = ws.cell(ri, 3).value or ""
+                comune   = ws.cell(ri, 2).value or ""
+                lbl = f"{insegna} - {indirizzo}, {comune}"
                 ws_g.cell(1, ci, lbl)
             ws_g.cell(1, n_punti + 1, "MEDIA")
 
+            # Righe 2+: valori per carburante + media
             for s_idx, (orig_idx, nome_carb) in enumerate(carb_attivi):
                 col_src = 5 + s_idx
                 riga_g = s_idx + 2
@@ -308,28 +303,99 @@ def processa_excel(file_bytes, filename="file.xls"):
                     v = round(float(v), 3) if v is not None and str(v) not in ("", "None") else 0.0
                     ws_g.cell(riga_g, ci, v)
                     valori.append((ri, v))
+
+                # Media esclude distanza 0
                 vals_media = [v for ri, v in valori if v > 0 and (ws.cell(ri, 4).value or 0) != 0]
                 media = round(sum(vals_media) / len(vals_media), 3) if vals_media else 0.0
                 ws_g.cell(riga_g, n_punti + 1, media)
 
+            # ── Costruzione grafico ─────────────────────────────────────────
             chart = BarChart()
             chart.type = "col"
-            chart.title = f"Confronto Prezzi [{nome_foglio}]"
+            chart.title = f"Confronto Prezzi Carburanti -  [{nome_foglio}]"
             chart.grouping = "clustered"
             chart.gapWidth = 100
-            chart.width = 25
-            chart.height = 14
+            chart.width = 30
+            chart.height = 18
+            chart.shape = 4
 
+            # Asse Y: parte da 0.5, formato 0,000
+            chart.y_axis.numFmt = '0.000'
+            chart.y_axis.scaling.min = 0.5
+            chart.y_axis.majorGridlines = True
+            chart.y_axis.delete = False
+
+            # Asse X: nascondi etichette tick (le mettiamo nel data table)
+            chart.x_axis.tickLblPos = "none"
+            chart.x_axis.delete = False
+
+            # Data table in basso
+            chart.plot_area.dTable = True
+
+            # Categories
             cats = Reference(ws_g, min_col=2, max_col=n_punti + 1, min_row=1, max_row=1)
             chart.set_categories(cats)
 
             for s_idx, (orig_idx, nome_carb) in enumerate(carb_attivi):
                 riga_g = s_idx + 2
                 colore_carb = COLORI_CARBURANTI.get(nome_carb, "4472C4")
+
+                # Leggi valori per trovare min/max
+                vals_riga = []
+                for ci in range(2, n_punti + 2):
+                    v = ws_g.cell(riga_g, ci).value or 0
+                    vals_riga.append(float(v))
+
+                # Esclude la colonna MEDIA (ultima) per trovare min/max sui dati reali
+                vals_solo_dati = [v for v in vals_riga[:-1] if v > 0]
+                val_max = max(vals_solo_dati) if vals_solo_dati else None
+                val_min = min(vals_solo_dati) if vals_solo_dati else None
+
                 data_ref = Reference(ws_g, min_col=2, max_col=n_punti + 1, min_row=riga_g, max_row=riga_g)
                 ser = Series(data_ref, title=nome_carb)
                 ser.graphicalProperties.solidFill = colore_carb
+                ser.graphicalProperties.line.solidFill = colore_carb
+
+                # Data labels: mostra solo min, max e MEDIA (ultima colonna)
+                ser.dLbls = DataLabelList()
+                ser.dLbls.showVal = False
+                ser.dLbls.showLegendKey = False
+                ser.dLbls.showCatName = False
+                ser.dLbls.showSerName = False
+
+                for pt_idx, v in enumerate(vals_riga):
+                    if v == 0:
+                        continue
+                    is_max  = (v == val_max)
+                    is_min  = (v == val_min)
+                    is_media = (pt_idx == len(vals_riga) - 1)
+
+                    if is_max or is_min or is_media:
+                        dl = DataLabel()
+                        dl.idx = pt_idx
+                        dl.showVal = True
+                        dl.showLegendKey = False
+                        dl.showCatName = False
+                        dl.showSerName = False
+                        dl.position = "outEnd"
+
+                        if is_max:
+                            dl.txPr = _make_label_txpr("FFFFFF", bold=True)
+                            dl.spPr  = _make_label_sppr("FF0000")
+                        elif is_min:
+                            dl.txPr = _make_label_txpr("000000", bold=True)
+                            dl.spPr  = _make_label_sppr("00FF00")
+                        elif is_media:
+                            dl.txPr = _make_label_txpr("FF0000", bold=True, italic=True)
+                            dl.spPr  = _make_label_sppr("FFFF00")
+
+                        if ser.dLbls.dataLabel is None:
+                            ser.dLbls.dataLabel = []
+                        ser.dLbls.dataLabel.append(dl)
+
                 chart.series.append(ser)
+
+            chart.legend = None  # Nessuna legenda (usa data table)
 
             col_chart = get_column_letter(len(intestazione) + 2)
             ws.add_chart(chart, f"{col_chart}1")
@@ -340,3 +406,42 @@ def processa_excel(file_bytes, filename="file.xls"):
     wb_out.save(output)
     output.seek(0)
     return output.read(), len(nomi_fogli_creati)
+
+
+# ── Helpers per stile etichette dati ────────────────────────────────────────
+def _make_label_txpr(hex_color, bold=False, italic=False):
+    from openpyxl.drawing.text import (
+        RichText, Paragraph, Run, RegularTextRun,
+        ParagraphProperties, RunProperties, CharacterProperties
+    )
+    from openpyxl.xml.functions import Element
+    # Costruiamo il txPr come XML grezzo tramite lxml per massima compatibilità
+    from lxml import etree
+    nsmap = {
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main"
+    }
+    txPr = etree.Element("{http://schemas.openxmlformats.org/drawingml/2006/main}txPr")
+    bodyPr = etree.SubElement(txPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}bodyPr")
+    lstStyle = etree.SubElement(txPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}lstStyle")
+    p = etree.SubElement(txPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}p")
+    pPr = etree.SubElement(p, "{http://schemas.openxmlformats.org/drawingml/2006/main}pPr")
+    defRPr = etree.SubElement(pPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}defRPr")
+    defRPr.set("b", "1" if bold else "0")
+    defRPr.set("i", "1" if italic else "0")
+    solidFill = etree.SubElement(defRPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill")
+    srgbClr = etree.SubElement(solidFill, "{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr")
+    srgbClr.set("val", hex_color)
+    return txPr
+
+
+def _make_label_sppr(bg_hex):
+    from lxml import etree
+    spPr = etree.Element("{http://schemas.openxmlformats.org/drawingml/2006/main}spPr")
+    solidFill = etree.SubElement(spPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill")
+    srgbClr = etree.SubElement(solidFill, "{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr")
+    srgbClr.set("val", bg_hex)
+    ln = etree.SubElement(spPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}ln")
+    solidFill2 = etree.SubElement(ln, "{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill")
+    srgbClr2 = etree.SubElement(solidFill2, "{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr")
+    srgbClr2.set("val", bg_hex)
+    return spPr
