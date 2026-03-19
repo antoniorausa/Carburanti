@@ -320,9 +320,10 @@ def processa_excel(file_bytes, filename="file.xls"):
             chart.shape = 4
 
             # Asse Y: parte da 0.5, formato 0,000
+            from openpyxl.chart.axis import ChartLines
             chart.y_axis.numFmt = '0.000'
             chart.y_axis.scaling.min = 0.5
-            chart.y_axis.majorGridlines = True
+            chart.y_axis.majorGridlines = ChartLines()
             chart.y_axis.delete = False
 
             # Asse X: nascondi etichette tick (le mettiamo nel data table)
