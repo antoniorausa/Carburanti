@@ -412,12 +412,6 @@ def processa_excel(file_bytes, filename="file.xls"):
 
 # ── Helpers per stile etichette dati ────────────────────────────────────────
 def _make_label_txpr(hex_color, bold=False, italic=False):
-    from openpyxl.drawing.text import (
-        RichText, Paragraph, Run, RegularTextRun,
-        ParagraphProperties, RunProperties, CharacterProperties
-    )
-    from openpyxl.xml.functions import Element
-    # Costruiamo il txPr come XML grezzo tramite lxml per massima compatibilità
     from lxml import etree
     nsmap = {
         "a": "http://schemas.openxmlformats.org/drawingml/2006/main"
