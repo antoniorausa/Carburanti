@@ -1,0 +1,53 @@
+﻿PlayerID;Nome;Consorzio;DistMax;Gasolio;Benzina;GPL;Metano
+DS_00717;CAD - Avezzano;CAD;10;1;1;0;0
+DS_26533;CAD - Campobasso;CAD;10;1;1;0;0
+DS_00747;CAD - L'Aquila;CAD;10;1;1;0;0
+DS_31281;CAD - Monsampolo del Tronto;CAD;10;1;1;1;1
+DS_13644;CCN - Bibbiano;CCN;10;1;1;0;0
+DS_41638;CCN - Casorate Primo;CCN;10;1;1;0;0
+DS_26155;CIA - Azzano Decimo;CIA;16;1;1;0;0
+DS_05693;CIA - Cesena;CIA;10;1;1;1;0
+DS_13364;CIA - Faenza;CIA;10;1;1;1;0
+DS_27918;CIA - Martignacco;CIA;10;1;1;0;0
+DS_33075;CIA - Meldola;CIA;20;1;1;1;0
+DS_12415;CIA - Porcia;CIA;20;1;1;1;0
+DS_28868;CIA - Portogruaro;CIA;10;1;1;0;0
+DS_32620;CNO - Alba;CNO;10;1;1;1;0
+DS_08113;CNO - Altopascio;CNO;10;1;1;0;0
+DS_26149;CNO - Avigliana;CNO;10;1;1;0;1
+DS_39943;CNO - Bologna;CNO;10;1;1;0;1
+DS_39970;CNO - Borgo San Dalmazzo;CNO;10;1;1;1;0
+DS_14108;CNO - Bracciano;CNO;10;1;1;0;0
+DS_07702;CNO - Campiglia Marittima;CNO;10;1;1;1;0
+DS_23012;CNO - Carbonia;CNO;10;1;1;0;0
+DS_12206;CNO - Casciana Terme Lari;CNO;10;1;1;0;0
+DS_33074;CNO - Cecina;CNO;10;1;1;1;1
+DS_32652;CNO - Ferrara;CNO;10;1;1;0;0
+DS_36497;CNO - Gallicano;CNO;10;1;1;0;0
+DS_30322;CNO - Grosseto 1;CNO;10;1;1;0;1
+DS_07078;CNO - Grosseto 2;CNO;10;1;1;0;0
+DS_27627;CNO - Iglesias;CNO;10;1;1;0;0
+DS_02453;CNO - Imola;CNO;10;1;1;1;0
+DS_17180;CNO - Ivrea;CNO;10;1;1;0;1
+DS_31412;CNO - Lucca;CNO;10;1;1;0;0
+DS_18868;CNO - Livorno Ferraris;CNO;10;1;1;1;0
+DS_09806;CNO - Modena;CNO;10;1;1;0;0
+DS_39140;CNO - Olbia;CNO;10;1;1;1;0
+DS_09879;CNO - Pavullo nel Frignano;CNO;10;1;1;0;0
+DS_39942;CNO - Pistoia;CNO;10;1;1;0;0
+DS_32479;CNO - Portoferraio;CNO;10;1;1;0;0
+DS_16334;CNO - Porto Torres;CNO;10;1;1;0;0
+DS_12502;CNO - Prato;CNO;10;1;1;1;0
+DS_38346;CNO - Savigliano;CNO;10;1;1;1;0
+DS_07214;CNO - Taggia;CNO;10;1;1;0;0
+DS_20421;PAC 2000A - Benevento;PAC 2000A;10;1;1;0;0
+DS_11966;PAC 2000A - Corciano 1;PAC 2000A;10;1;1;0;0
+DS_23742;PAC 2000A - Corciano 2;PAC 2000A;10;1;1;0;0
+DS_29292;PAC 2000A - Corigliano-Rossano;PAC 2000A;10;1;1;0;0
+DS_10218;PAC 2000A - Giugliano;PAC 2000A;10;1;1;0;0
+DS_12004;PAC 2000A - Gualdo Tadino;PAC 2000A;10;1;1;0;0
+DS_13204;PAC 2000A - Lauria;PAC 2000A;10;1;1;1;0
+DS_15730;PAC 2000A - Pagani;PAC 2000A;10;1;1;0;0
+DS_12068;PAC 2000A - Perugia;PAC 2000A;10;1;1;0;0
+DS_39944;PAC 2000A - Ricadi;PAC 2000A;10;1;1;0;0
+DS_03993;PAC 2000A - Trentola Ducenta;PAC 2000A;10;1;1;0;0
