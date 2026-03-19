@@ -331,7 +331,8 @@ def processa_excel(file_bytes, filename="file.xls"):
             chart.x_axis.delete = False
 
             # Data table in basso
-            chart.plot_area.dTable = True
+            from openpyxl.chart.plotarea import DataTable
+            chart.plot_area.dTable = DataTable(showHorzBorder=True, showVertBorder=True, showOutline=True, showKeys=True)
 
             # Categories
             cats = Reference(ws_g, min_col=2, max_col=n_punti + 1, min_row=1, max_row=1)
