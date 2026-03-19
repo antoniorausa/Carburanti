@@ -359,41 +359,44 @@ def processa_excel(file_bytes, filename="file.xls"):
                 ser.graphicalProperties.line.solidFill = colore_carb
 
                 # Data labels: mostra solo min, max e MEDIA (ultima colonna)
-                ser.dLbls = DataLabelList()
-                ser.dLbls.showVal = False
-                ser.dLbls.showLegendKey = False
-                ser.dLbls.showCatName = False
-                ser.dLbls.showSerName = False
-
+                labels = []
                 for pt_idx, v in enumerate(vals_riga):
                     if v == 0:
                         continue
-                    is_max  = (v == val_max)
-                    is_min  = (v == val_min)
+                    is_max   = (v == val_max)
+                    is_min   = (v == val_min)
                     is_media = (pt_idx == len(vals_riga) - 1)
 
                     if is_max or is_min or is_media:
-                        dl = DataLabel()
-                        dl.idx = pt_idx
-                        dl.showVal = True
-                        dl.showLegendKey = False
-                        dl.showCatName = False
-                        dl.showSerName = False
-                        dl.position = "outEnd"
-
                         if is_max:
-                            dl.txPr = _make_label_txpr("FFFFFF", bold=True)
-                            dl.spPr  = _make_label_sppr("FF0000")
+                            txPr = _make_label_txpr("FFFFFF", bold=True)
+                            spPr = _make_label_sppr("FF0000")
                         elif is_min:
-                            dl.txPr = _make_label_txpr("000000", bold=True)
-                            dl.spPr  = _make_label_sppr("00FF00")
-                        elif is_media:
-                            dl.txPr = _make_label_txpr("FF0000", bold=True, italic=True)
-                            dl.spPr  = _make_label_sppr("FFFF00")
+                            txPr = _make_label_txpr("000000", bold=True)
+                            spPr = _make_label_sppr("00FF00")
+                        else:  # media
+                            txPr = _make_label_txpr("FF0000", bold=True, italic=True)
+                            spPr = _make_label_sppr("FFFF00")
 
-                        if ser.dLbls.dataLabel is None:
-                            ser.dLbls.dataLabel = []
-                        ser.dLbls.dataLabel.append(dl)
+                        dl = DataLabel(
+                            idx=pt_idx,
+                            showVal=True,
+                            showLegendKey=False,
+                            showCatName=False,
+                            showSerName=False,
+                            dLblPos="outEnd",
+                            txPr=txPr,
+                            spPr=spPr,
+                        )
+                        labels.append(dl)
+
+                ser.dLbls = DataLabelList(
+                    dLbl=labels,
+                    showVal=False,
+                    showLegendKey=False,
+                    showCatName=False,
+                    showSerName=False,
+                )
 
                 chart.series.append(ser)
 
