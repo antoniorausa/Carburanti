@@ -1,8 +1,19 @@
 import io
+import os
+import csv
+import xlrd
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import BarChart, Reference, Series
+
+# Riga Excel dove si trova l'intestazione nel file sorgente (1-based)
+RIGA_INTESTAZIONE = 8
+
+# Percorso dei CSV fissi nella cartella del progetto
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MAPPING_CSV    = os.path.join(BASE_DIR, "mapping.csv")
+PDV_CSV        = os.path.join(BASE_DIR, "pdv_selezionati.csv")
 
 COLORI_CATEGORIA = {
     "CAD":       "FF9999",
@@ -28,30 +39,53 @@ def _pulisci_nome_foglio(nome):
     return nome[:31]
 
 
-def _leggi_mapping(wb):
-    ws = wb["Mapping"]
+def _leggi_mapping_csv():
+    """
+    Legge mapping.csv con colonne:
+    codice, nome, categoria, distanza_max, gasolio, benzina, gpl, metano
+    """
     mapping, colori, distanze, carburanti = {}, {}, {}, {}
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        k = str(row[0]).strip() if row[0] else ""
-        if not k:
-            continue
-        mapping[k]    = str(row[1]).strip() if row[1] else ""
-        colori[k]     = str(row[2]).strip().upper() if row[2] else ""
-        distanze[k]   = row[3] if row[3] is not None else ""
-        carburanti[k] = [
-            int(row[4]) if row[4] is not None else 1,
-            int(row[5]) if row[5] is not None else 1,
-            int(row[6]) if row[6] is not None else 1,
-            int(row[7]) if row[7] is not None else 1,
-        ]
+    if not os.path.exists(MAPPING_CSV):
+        return mapping, colori, distanze, carburanti
+    with open(MAPPING_CSV, newline="", encoding="utf-8-sig") as f:
+        reader = csv.reader(f, delimiter=";")
+        next(reader, None)  # salta intestazione
+        for row in reader:
+            if not row or not row[0].strip():
+                continue
+            k = row[0].strip()
+            mapping[k]  = row[1].strip() if len(row) > 1 else ""
+            colori[k]   = row[2].strip().upper() if len(row) > 2 else ""
+            distanze[k] = row[3].strip() if len(row) > 3 else ""
+            carburanti[k] = [
+                int(row[4]) if len(row) > 4 and row[4].strip() else 1,
+                int(row[5]) if len(row) > 5 and row[5].strip() else 1,
+                int(row[6]) if len(row) > 6 and row[6].strip() else 1,
+                int(row[7]) if len(row) > 7 and row[7].strip() else 1,
+            ]
     return mapping, colori, distanze, carburanti
 
 
-def _leggi_pdv(wb):
-    if "PDV_selezionati" not in wb.sheetnames:
-        return set()
-    ws = wb["PDV_selezionati"]
-    return {str(row[0]).strip() for row in ws.iter_rows(min_row=2, values_only=True) if row[0]}
+def _leggi_pdv_csv():
+    """
+    Legge pdv_selezionati.csv.
+    Colonne attese (sep TAB o ;):
+      Indirizzo | Insegna | PlayerID | Nome | Consorzio
+    La chiave di match e la colonna 1 (Indirizzo), esattamente come nel VBA originale.
+    """
+    pdv = set()
+    if not os.path.exists(PDV_CSV):
+        return pdv
+    with open(PDV_CSV, newline="", encoding="utf-8-sig") as f:
+        # Rileva separatore: tab o punto e virgola
+        sample = f.read(1024); f.seek(0)
+        sep = "	" if "	" in sample else ";"
+        reader = csv.reader(f, delimiter=sep)
+        next(reader, None)  # salta intestazione
+        for row in reader:
+            if row and row[0].strip():
+                pdv.add(row[0].strip())
+    return pdv
 
 
 def _parse_distanza(val):
@@ -74,16 +108,48 @@ def _parse_prezzo(val):
         return 0.0
 
 
-def processa_excel(file_bytes):
-    wb_in = load_workbook(filename=io.BytesIO(file_bytes), data_only=True)
+def _leggi_sorgente_xls(file_bytes):
+    wb = xlrd.open_workbook(file_contents=file_bytes)
+    ws = wb.sheet_by_index(0)
+    skip = RIGA_INTESTAZIONE - 1  # 0-based: salta le prime 7 righe
+    rows = []
+    for i in range(skip, ws.nrows):
+        row = []
+        for j in range(ws.ncols):
+            cell = ws.cell(i, j)
+            if cell.ctype == xlrd.XL_CELL_EMPTY:
+                row.append(None)
+            elif cell.ctype == xlrd.XL_CELL_NUMBER:
+                v = cell.value
+                row.append(int(v) if v == int(v) else v)
+            else:
+                row.append(str(cell.value).strip() if cell.value != "" else None)
+        rows.append(row)
+    return rows  # rows[0]=intestazione, rows[1:]=dati
 
-    mapping, colori, distanze, carburanti = _leggi_mapping(wb_in)
-    pdv_selezionati = _leggi_pdv(wb_in)
 
-    ws_src = wb_in.worksheets[0]
-    rows = list(ws_src.values)
-    data_rows = rows[1:]
+def _leggi_sorgente_xlsx(file_bytes):
+    wb = load_workbook(filename=io.BytesIO(file_bytes), data_only=True)
+    ws = wb.worksheets[0]
+    all_rows = list(ws.values)
+    skip = RIGA_INTESTAZIONE - 1
+    return [list(r) for r in all_rows[skip:]]  # rows[0]=intestazione, rows[1:]=dati
 
+
+def processa_excel(file_bytes, filename="file.xls"):
+    # ── Carica CSV fissi ─────────────────────────────────────────────────────
+    mapping, colori, distanze, carburanti = _leggi_mapping_csv()
+    pdv_selezionati = _leggi_pdv_csv()
+
+    # ── Leggi sorgente ───────────────────────────────────────────────────────
+    is_xls = filename.lower().endswith(".xls") and not filename.lower().endswith(".xlsx")
+    src_rows = _leggi_sorgente_xls(file_bytes) if is_xls else _leggi_sorgente_xlsx(file_bytes)
+    data_rows = src_rows[1:]  # salta intestazione
+
+    # Colonne sorgente (0-based):
+    # 0=Codice gestore, 1=Comune PDV, 2=Indirizzo PDV
+    # 3=Insegna, 4=Comune conc., 5=Indirizzo conc., 6=Distanza
+    # 7=Gasolio, 8=Benzina, 9=GPL, 10=Metano
     IDX_CODICE   = 0
     IDX_COMUNE   = 1
     IDX_DISTANZA = 6
@@ -103,6 +169,7 @@ def processa_excel(file_bytes):
         key=lambda x: mapping.get(x[0], "ZZ_" + x[0])
     )
 
+    # ── Nuovo workbook output ────────────────────────────────────────────────
     wb_out = Workbook()
     wb_out.remove(wb_out.active)
 
@@ -113,7 +180,7 @@ def processa_excel(file_bytes):
     nomi_fogli_creati = []
 
     for (v1, v2) in coppie_ordinate:
-        nome_da_mapping = mapping.get(v1, f"NonMappato_{v1}")
+        nome_da_mapping = mapping.get(v1, f"{v1} - {v2}")
         nome_foglio = _pulisci_nome_foglio(nome_da_mapping)
         base = nome_foglio
         suf = 1
@@ -136,7 +203,6 @@ def processa_excel(file_bytes):
         except (ValueError, TypeError):
             soglia_f = None
 
-        # Costruisci righe elaborate
         righe_elaborate = []
         for r in righe_filtrate:
             dist = _parse_distanza(r[IDX_DISTANZA])
@@ -158,7 +224,7 @@ def processa_excel(file_bytes):
 
         righe_elaborate.sort(key=lambda x: x[3])
 
-        # ── Scrivi foglio dati ────────────────────────────────────────────────
+        # ── Scrivi foglio ────────────────────────────────────────────────────
         ws = wb_out.create_sheet(nome_foglio)
 
         cat = colori.get(v1, "")
@@ -180,7 +246,8 @@ def processa_excel(file_bytes):
 
         righe_gialle = []
         for ri, riga in enumerate(righe_elaborate, 2):
-            is_pdv = riga[0] in pdv_selezionati
+            # riga[2] = Indirizzo concorrente (colonna 3 nel foglio dest = chiave PDV come nel VBA)
+            is_pdv = riga[2] in pdv_selezionati
             for ci, val in enumerate(riga, 1):
                 cell = ws.cell(row=ri, column=ci, value=val)
                 if ci >= 5:
@@ -194,19 +261,16 @@ def processa_excel(file_bytes):
             max_len = max((len(str(c.value)) for c in col if c.value is not None), default=8)
             ws.column_dimensions[get_column_letter(col[0].column)].width = min(max_len + 2, 40)
 
-        # ── Grafico su foglio dati dedicato ──────────────────────────────────
+        # ── Grafico ──────────────────────────────────────────────────────────
         ultima_riga_dati = len(righe_elaborate) + 1
         if ultima_riga_dati > 1 and carb_attivi:
             righe_grafico = righe_gialle if righe_gialle else list(range(2, ultima_riga_dati + 1))
-            n_punti = len(righe_grafico) + 1  # +1 per colonna MEDIA
+            n_punti = len(righe_grafico) + 1  # +1 per MEDIA
 
-            # Foglio sorgente dati grafico (nascosto)
             nome_ws_g = f"_g_{nome_foglio}"[:31]
             ws_g = wb_out.create_sheet(nome_ws_g)
             ws_g.sheet_state = "hidden"
 
-            # Colonna 1 = titolo serie, colonne 2..n_punti+1 = valori
-            # Riga 1 = etichette X
             ws_g.cell(1, 1, "Serie")
             for ci, ri in enumerate(righe_grafico, 2):
                 lbl = f"{ws.cell(ri, 1).value} - {ws.cell(ri, 2).value}"
@@ -214,26 +278,19 @@ def processa_excel(file_bytes):
             ws_g.cell(1, n_punti + 1, "MEDIA")
 
             for s_idx, (orig_idx, nome_carb) in enumerate(carb_attivi):
-                col_src = 5 + s_idx   # colonna nel foglio dati (1-based)
-                riga_g = s_idx + 2    # riga nel foglio grafico
-
+                col_src = 5 + s_idx
+                riga_g = s_idx + 2
                 ws_g.cell(riga_g, 1, nome_carb)
-
                 valori = []
                 for ci, ri in enumerate(righe_grafico, 2):
                     v = ws.cell(ri, col_src).value
                     v = round(float(v), 3) if v is not None and str(v) not in ("", "None") else 0.0
                     ws_g.cell(riga_g, ci, v)
                     valori.append((ri, v))
-
-                vals_media = [
-                    v for ri, v in valori
-                    if v > 0 and (ws.cell(ri, 4).value or 0) != 0
-                ]
+                vals_media = [v for ri, v in valori if v > 0 and (ws.cell(ri, 4).value or 0) != 0]
                 media = round(sum(vals_media) / len(vals_media), 3) if vals_media else 0.0
                 ws_g.cell(riga_g, n_punti + 1, media)
 
-            # Costruisci grafico
             chart = BarChart()
             chart.type = "col"
             chart.title = f"Confronto Prezzi [{nome_foglio}]"
@@ -242,7 +299,6 @@ def processa_excel(file_bytes):
             chart.width = 25
             chart.height = 14
 
-            # Categorie (riga 1, colonne 2..n_punti+1)
             cats = Reference(ws_g, min_col=2, max_col=n_punti + 1, min_row=1, max_row=1)
             chart.set_categories(cats)
 
@@ -262,4 +318,4 @@ def processa_excel(file_bytes):
     output = io.BytesIO()
     wb_out.save(output)
     output.seek(0)
-    return output.read()
+    return output.read(), len(nomi_fogli_creati)

@@ -1,31 +1,32 @@
 import streamlit as st
-import pandas as pd
-import io
 from processor import processa_excel
 
 st.set_page_config(page_title="Divisore Prezzi Carburanti", page_icon="⛽", layout="centered")
 
 st.title("⛽ Divisore Prezzi Carburanti")
-st.markdown("Carica il file Excel sorgente e scarica il risultato con tutti i fogli divisi per codice.")
+st.markdown("Carica il file sorgente `.xls` e scarica il risultato con tutti i fogli divisi.")
 
-uploaded_file = st.file_uploader("📂 Carica il file Excel", type=["xlsx"])
+file_sorgente = st.file_uploader("📂 File sorgente (dati prezzi)", type=["xls", "xlsx"])
 
-if uploaded_file:
-    st.success(f"File caricato: **{uploaded_file.name}**")
+with st.expander("ℹ️ Struttura attesa del file"):
+    st.markdown("""
+    **File sorgente** (`.xls` o `.xlsx`):
+    - Riga 8 = intestazione colonne
+    - Riga 9+ = dati
+    - Colonne: Codice gestore, Comune PDV, Indirizzo PDV, Insegna, Comune conc., Indirizzo conc., Distanza, Gasolio, Benzina, GPL, Metano
 
-    with st.expander("ℹ️ Struttura attesa del file"):
-        st.markdown("""
-        Il file deve contenere questi fogli:
-        - **Foglio 1** (sorgente): colonna 1 = Codice Gestore, colonna 2 = Codice Carburante, colonna 4+ = dati
-        - **Mapping**: col.1 = codice, col.2 = nome, col.3 = categoria colore, col.4 = distanza max, col.5-8 = flag Gasolio/Benzina/GPL/Metano
-        - **PDV_selezionati** *(opzionale)*: colonna 1 = codici da evidenziare in giallo
-        """)
+    **Mapping e PDV** sono già caricati internamente dall'applicazione (`mapping.csv` e `pdv_selezionati.csv`).
+    Per aggiornarli, sostituire i file CSV nella cartella del progetto su GitHub.
+    """)
 
-    if st.button("🚀 Elabora file", type="primary"):
+if file_sorgente:
+    if st.button("🚀 Elabora", type="primary"):
         with st.spinner("Elaborazione in corso..."):
             try:
-                output_bytes = processa_excel(uploaded_file.read())
-                st.success("✅ Elaborazione completata!")
+                src_bytes = file_sorgente.read()
+                filename  = file_sorgente.name
+                output_bytes, n_fogli = processa_excel(src_bytes, filename=filename)
+                st.success(f"✅ Completato! Creati {n_fogli} fogli.")
                 st.download_button(
                     label="⬇️ Scarica Excel risultato",
                     data=output_bytes,
@@ -33,5 +34,5 @@ if uploaded_file:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             except Exception as e:
-                st.error(f"❌ Errore durante l'elaborazione: {e}")
+                st.error(f"❌ Errore: {e}")
                 st.exception(e)
