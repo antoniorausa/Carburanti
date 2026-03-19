@@ -421,13 +421,5 @@ def _make_label_txpr(hex_color, bold=False, italic=False):
 
 
 def _make_label_sppr(bg_hex):
-    """Sfondo colorato per etichetta — costruito come XML grezzo (openpyxl non espone spPr su DataLabel)."""
-    from lxml import etree
-    NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
-    spPr = etree.Element(f"{{{NS}}}spPr")
-    sf   = etree.SubElement(spPr, f"{{{NS}}}solidFill")
-    etree.SubElement(sf, f"{{{NS}}}srgbClr").set("val", bg_hex)
-    ln   = etree.SubElement(spPr, f"{{{NS}}}ln")
-    sf2  = etree.SubElement(ln, f"{{{NS}}}solidFill")
-    etree.SubElement(sf2, f"{{{NS}}}srgbClr").set("val", bg_hex)
-    return spPr
+    from openpyxl.chart.shapes import GraphicalProperties
+    return GraphicalProperties(solidFill=bg_hex)
