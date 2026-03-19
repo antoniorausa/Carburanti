@@ -412,32 +412,22 @@ def processa_excel(file_bytes, filename="file.xls"):
 
 # ── Helpers per stile etichette dati ────────────────────────────────────────
 def _make_label_txpr(hex_color, bold=False, italic=False):
-    from lxml import etree
-    nsmap = {
-        "a": "http://schemas.openxmlformats.org/drawingml/2006/main"
-    }
-    txPr = etree.Element("{http://schemas.openxmlformats.org/drawingml/2006/main}txPr")
-    bodyPr = etree.SubElement(txPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}bodyPr")
-    lstStyle = etree.SubElement(txPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}lstStyle")
-    p = etree.SubElement(txPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}p")
-    pPr = etree.SubElement(p, "{http://schemas.openxmlformats.org/drawingml/2006/main}pPr")
-    defRPr = etree.SubElement(pPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}defRPr")
-    defRPr.set("b", "1" if bold else "0")
-    defRPr.set("i", "1" if italic else "0")
-    solidFill = etree.SubElement(defRPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill")
-    srgbClr = etree.SubElement(solidFill, "{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr")
-    srgbClr.set("val", hex_color)
-    return txPr
+    from openpyxl.drawing.text import Paragraph, ParagraphProperties, CharacterProperties
+    from openpyxl.chart.text import RichText
+    rpr = CharacterProperties(b=bold or None, i=italic or None, solidFill=hex_color)
+    pp  = ParagraphProperties(defRPr=rpr)
+    p   = Paragraph(pPr=pp)
+    return RichText(p=[p])
 
 
 def _make_label_sppr(bg_hex):
+    """Sfondo colorato per etichetta — costruito come XML grezzo (openpyxl non espone spPr su DataLabel)."""
     from lxml import etree
-    spPr = etree.Element("{http://schemas.openxmlformats.org/drawingml/2006/main}spPr")
-    solidFill = etree.SubElement(spPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill")
-    srgbClr = etree.SubElement(solidFill, "{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr")
-    srgbClr.set("val", bg_hex)
-    ln = etree.SubElement(spPr, "{http://schemas.openxmlformats.org/drawingml/2006/main}ln")
-    solidFill2 = etree.SubElement(ln, "{http://schemas.openxmlformats.org/drawingml/2006/main}solidFill")
-    srgbClr2 = etree.SubElement(solidFill2, "{http://schemas.openxmlformats.org/drawingml/2006/main}srgbClr")
-    srgbClr2.set("val", bg_hex)
+    NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+    spPr = etree.Element(f"{{{NS}}}spPr")
+    sf   = etree.SubElement(spPr, f"{{{NS}}}solidFill")
+    etree.SubElement(sf, f"{{{NS}}}srgbClr").set("val", bg_hex)
+    ln   = etree.SubElement(spPr, f"{{{NS}}}ln")
+    sf2  = etree.SubElement(ln, f"{{{NS}}}solidFill")
+    etree.SubElement(sf2, f"{{{NS}}}srgbClr").set("val", bg_hex)
     return spPr
