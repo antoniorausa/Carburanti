@@ -325,15 +325,18 @@ def processa_excel(file_bytes, filename="file.xls"):
             chart.style = 8  # tema scuro Excel stile 8
 
             # Titolo con overlay=False per non sovrapporsi al grafico
-            title_rpr = CharacterProperties(b=True, solidFill="FFFFFF")
-            title_pp  = ParagraphProperties(defRPr=title_rpr)
-            title_p   = Paragraph(pPr=title_pp)
-            title_txPr = ChartRichText(p=[title_p])
+            from openpyxl.chart.text import Text
+            from openpyxl.drawing.text import RegularTextRun
+            title_rpr  = CharacterProperties(b=True, solidFill="FFFFFF")
+            title_pp   = ParagraphProperties(defRPr=title_rpr)
+            title_run  = RegularTextRun(t=f"Confronto Prezzi Carburanti -  [{nome_foglio}]", rPr=title_rpr)
+            title_p    = Paragraph(pPr=title_pp, r=[title_run])
+            title_rich = ChartRichText(p=[title_p])
             chart.title = Title(
+                tx=Text(rich=title_rich),
                 overlay=False,
-                txPr=title_txPr,
+                txPr=ChartRichText(p=[Paragraph(pPr=ParagraphProperties(defRPr=title_rpr))]),
             )
-            chart.title.text = f"Confronto Prezzi Carburanti -  [{nome_foglio}]"
 
             # Asse Y: parte da 0.5, formato 0,000
             from openpyxl.chart.axis import ChartLines
