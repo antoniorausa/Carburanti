@@ -285,10 +285,11 @@ def processa_excel(file_bytes, filename="file.xls"):
             # Riga 1: etichette (Insegna - Indirizzo, Comune)
             ws_g.cell(1, 1, "Serie")
             for ci, ri in enumerate(righe_grafico, 2):
-                insegna  = ws.cell(ri, 1).value or ""
+                insegna   = ws.cell(ri, 1).value or ""
                 indirizzo = ws.cell(ri, 3).value or ""
-                comune   = ws.cell(ri, 2).value or ""
-                lbl = f"{insegna} - {indirizzo}, {comune}"
+                comune_conc = ws.cell(ri, 2).value or ""
+                # Formato: Insegna - Indirizzo comp., Comune (comune del distributore v2)
+                lbl = f"{insegna} - {indirizzo}, {comune_conc}"
                 ws_g.cell(1, ci, lbl)
             ws_g.cell(1, n_punti + 1, "MEDIA")
 
