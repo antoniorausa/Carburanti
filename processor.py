@@ -324,12 +324,12 @@ def processa_excel(file_bytes, filename="file.xls"):
             chart.shape = 4
             chart.style = 8  # tema scuro Excel stile 8
 
-            # Titolo con overlay=False per non sovrapporsi al grafico
+            # Titolo con overlay=False, testo nero visibile
             from openpyxl.chart.text import Text
             from openpyxl.drawing.text import RegularTextRun
-            t_rpr  = CharacterProperties(b=True, solidFill="FFFFFF")
-            t_run  = RegularTextRun(t=f"Confronto Prezzi Carburanti - [{nome_foglio}]", rPr=t_rpr)
-            t_p    = Paragraph(pPr=ParagraphProperties(defRPr=t_rpr), r=[t_run])
+            t_rpr = CharacterProperties(b=True, solidFill="000000")
+            t_run = RegularTextRun(t=f"Confronto Prezzi Carburanti - [{nome_foglio}]", rPr=t_rpr)
+            t_p   = Paragraph(pPr=ParagraphProperties(defRPr=t_rpr), r=[t_run])
             chart.title = Title(tx=Text(rich=ChartRichText(p=[t_p])), overlay=False)
 
             # Asse Y: parte da 0.5, formato 0,000
@@ -425,10 +425,46 @@ def processa_excel(file_bytes, filename="file.xls"):
 
     ws_indice.column_dimensions["A"].width = 35
 
-    output = io.BytesIO()
-    wb_out.save(output)
-    output.seek(0)
-    return output.read(), len(nomi_fogli_creati)
+    # Salva in buffer temporaneo
+    tmp = io.BytesIO()
+    wb_out.save(tmp)
+    tmp.seek(0)
+
+    # Post-processing: applica sfondo scuro a tutti i grafici via XML
+    result = _applica_tema_scuro(tmp.read())
+    return result, len(nomi_fogli_creati)
+
+
+def _applica_tema_scuro(xlsx_bytes):
+    """Modifica l XML dei grafici per applicare sfondo scuro stile Excel 8."""
+    import zipfile
+    inp = io.BytesIO(xlsx_bytes)
+    out = io.BytesIO()
+
+    CHART_SPPR  = ('<c:spPr xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
+                   ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                   '<a:solidFill><a:srgbClr val="1F1F1F"/></a:solidFill>'
+                   '<a:ln><a:solidFill><a:srgbClr val="1F1F1F"/></a:solidFill></a:ln>'
+                   '</c:spPr>')
+    PLOT_SPPR   = ('<c:spPr xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
+                   ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                   '<a:solidFill><a:srgbClr val="2D2D2D"/></a:solidFill>'
+                   '</c:spPr>')
+
+    with zipfile.ZipFile(inp, "r") as zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename.startswith("xl/charts/chart") and item.filename.endswith(".xml"):
+                xml = data.decode("utf-8")
+                # Sfondo esterno (chartSpace)
+                xml = xml.replace("<chart>", CHART_SPPR + "<chart>", 1)
+                # Sfondo area plot
+                xml = xml.replace("</c:plotArea>", PLOT_SPPR + "</c:plotArea>", 1)
+                data = xml.encode("utf-8")
+            zout.writestr(item, data)
+
+    out.seek(0)
+    return out.read()
 
 
 # ── Helpers per stile etichette dati ────────────────────────────────────────
