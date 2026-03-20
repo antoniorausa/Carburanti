@@ -311,14 +311,29 @@ def processa_excel(file_bytes, filename="file.xls"):
                 ws_g.cell(riga_g, n_punti + 1, media)
 
             # ── Costruzione grafico ─────────────────────────────────────────
+            from openpyxl.chart.title import Title
+            from openpyxl.chart.text import RichText as ChartRichText
+            from openpyxl.drawing.text import Paragraph, ParagraphProperties, CharacterProperties
+
             chart = BarChart()
             chart.type = "col"
-            chart.title = f"Confronto Prezzi Carburanti -  [{nome_foglio}]"
             chart.grouping = "clustered"
             chart.gapWidth = 100
             chart.width = 30
             chart.height = 18
             chart.shape = 4
+            chart.style = 8  # tema scuro Excel stile 8
+
+            # Titolo con overlay=False per non sovrapporsi al grafico
+            title_rpr = CharacterProperties(b=True, solidFill="FFFFFF")
+            title_pp  = ParagraphProperties(defRPr=title_rpr)
+            title_p   = Paragraph(pPr=title_pp)
+            title_txPr = ChartRichText(p=[title_p])
+            chart.title = Title(
+                overlay=False,
+                txPr=title_txPr,
+            )
+            chart.title.text = f"Confronto Prezzi Carburanti -  [{nome_foglio}]"
 
             # Asse Y: parte da 0.5, formato 0,000
             from openpyxl.chart.axis import ChartLines
