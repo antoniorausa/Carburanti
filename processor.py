@@ -335,7 +335,6 @@ def processa_excel(file_bytes, filename="file.xls"):
             # Asse Y: parte da 0.5, formato 0,000
             from openpyxl.chart.axis import ChartLines
             chart.y_axis.numFmt = '0.000'
-            chart.y_axis.scaling.min = 0.5
             chart.y_axis.majorGridlines = ChartLines()
             chart.y_axis.delete = False
 
