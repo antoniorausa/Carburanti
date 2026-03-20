@@ -190,6 +190,8 @@ def processa_excel(file_bytes, filename="file.xls"):
     ws_indice["A1"].font = Font(bold=True)
     riga_indice = 2
     nomi_fogli_creati = []
+    titoli_grafici = {}  # chart_filename -> titolo
+    chart_counter = 1
 
     for (v1, v2) in coppie_ordinate:
         nome_da_mapping = mapping.get(v1, f"{v1} - {v2}")
@@ -422,6 +424,8 @@ def processa_excel(file_bytes, filename="file.xls"):
 
             col_chart = get_column_letter(len(intestazione) + 2)
             ws.add_chart(chart, f"{col_chart}1")
+            titoli_grafici[f'chart{chart_counter}.xml'] = f'Confronto Prezzi Carburanti - [{nome_foglio}]'
+            chart_counter += 1
 
     ws_indice.column_dimensions["A"].width = 35
 
@@ -431,36 +435,104 @@ def processa_excel(file_bytes, filename="file.xls"):
     tmp.seek(0)
 
     # Post-processing: applica sfondo scuro a tutti i grafici via XML
-    result = _applica_tema_scuro(tmp.read())
+    result = _applica_tema_scuro(tmp.read(), titoli_grafici)
     return result, len(nomi_fogli_creati)
 
 
-def _applica_tema_scuro(xlsx_bytes):
-    """Modifica l XML dei grafici per applicare sfondo scuro stile Excel 8."""
-    import zipfile
+# ── Costanti estratte dal template grafico Excel ─────────────────────────────
+_TPL_ALTCONTENT    = '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="c14" xmlns:c14="http://schemas.microsoft.com/office/drawing/2007/8/2/chart"><c14:style val="102"/></mc:Choice><mc:Fallback><c:style val="2"/></mc:Fallback></mc:AlternateContent>'
+_TPL_CHARTSPACE_SPPR = '<c:spPr><a:gradFill flip="none" rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="dk1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="dk1"><a:lumMod val="85000"/><a:lumOff val="15000"/></a:schemeClr></a:gs></a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path><a:tileRect/></a:gradFill><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr>'
+_TPL_CATAX         = '<c:catAx><c:axId val="1147168719"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="1"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="it-IT"/></a:p></c:txPr><c:crossAx val="1147152399"/><c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/><c:lblOffset val="100"/><c:noMultiLvlLbl val="0"/></c:catAx>'
+_TPL_VALAX         = '<c:valAx><c:axId val="1147152399"/><c:scaling><c:orientation val="minMax"/><c:min val="0.5"/></c:scaling><c:delete val="0"/><c:axPos val="l"/><c:majorGridlines><c:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="10000"/></a:schemeClr></a:solidFill><a:round/></a:ln><a:effectLst/></c:spPr></c:majorGridlines><c:numFmt formatCode="0.000" sourceLinked="0"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/><c:tickLblPos val="nextTo"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="-60000000" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="it-IT"/></a:p></c:txPr><c:crossAx val="1147168719"/><c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>'
+_TPL_DTABLE        = '<c:dTable><c:showHorzBorder val="1"/><c:showVertBorder val="1"/><c:showOutline val="1"/><c:showKeys val="1"/><c:spPr><a:noFill/><a:ln w="9525"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr rtl="0"><a:defRPr sz="900" b="0" i="0" u="none" strike="noStrike" kern="1200" baseline="0"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="it-IT"/></a:p></c:txPr></c:dTable>'
+_TPL_TITLE         = '<c:title><c:tx><c:rich><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1600" b="1" i="0" u="none" strike="noStrike" kern="1200" spc="100" baseline="0"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/></a:schemeClr></a:solidFill><a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="5400000" algn="t" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:r><a:rPr lang="it-IT"/><a:t>__TITLE__</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/><c:spPr><a:noFill/><a:ln><a:noFill/></a:ln><a:effectLst/></c:spPr><c:txPr><a:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="ellipsis" vert="horz" wrap="square" anchor="ctr" anchorCtr="1"/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1600" b="1" i="0" u="none" strike="noStrike" kern="1200" spc="100" baseline="0"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/></a:schemeClr></a:solidFill><a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="5400000" algn="t" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:pPr><a:endParaRPr lang="it-IT"/></a:p></c:txPr></c:title>'
+_TPL_STYLE1        = '<cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" id="209"><cs:axisTitle><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" b="1" kern="1200" cap="all"/></cs:axisTitle><cs:categoryAxis><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></cs:fontRef><cs:spPr><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/></cs:categoryAxis><cs:chartArea><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="dk1"/></cs:fontRef><cs:spPr><a:gradFill flip="none" rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="dk1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="dk1"><a:lumMod val="85000"/><a:lumOff val="15000"/></a:schemeClr></a:gs></a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="50000" r="50000" b="50000"/></a:path><a:tileRect/></a:gradFill></cs:spPr><cs:defRPr sz="1000" kern="1200"/></cs:chartArea><cs:dataLabel><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:dataLabel><cs:dataLabelCallout><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="dk1"><a:lumMod val="65000"/><a:lumOff val="35000"/></a:schemeClr></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></cs:spPr><cs:defRPr sz="900" kern="1200"/><cs:bodyPr rot="0" spcFirstLastPara="1" vertOverflow="clip" horzOverflow="clip" vert="horz" wrap="square" lIns="36576" tIns="18288" rIns="36576" bIns="18288" anchor="ctr" anchorCtr="1"><a:spAutoFit/></cs:bodyPr></cs:dataLabelCallout><cs:dataPoint><cs:lnRef idx="0"/><cs:fillRef idx="3"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="3"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef></cs:dataPoint><cs:dataPoint3D><cs:lnRef idx="0"/><cs:fillRef idx="3"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="3"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef></cs:dataPoint3D><cs:dataPointLine><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="3"/><cs:effectRef idx="3"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="34925" cap="rnd"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:round/></a:ln></cs:spPr></cs:dataPointLine><cs:dataPointMarker><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="3"><cs:styleClr val="auto"/></cs:fillRef><cs:effectRef idx="3"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:round/></a:ln></cs:spPr></cs:dataPointMarker><cs:dataPointMarkerLayout symbol="circle" size="6"/><cs:dataPointWireframe><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="3"/><cs:effectRef idx="3"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="rnd"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:round/></a:ln></cs:spPr></cs:dataPointWireframe><cs:dataTable><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></cs:fontRef><cs:spPr><a:ln w="9525"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/></cs:dataTable><cs:downBar><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="dk1"><a:lumMod val="75000"/><a:lumOff val="25000"/></a:schemeClr></a:solidFill><a:ln w="9525"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr></cs:downBar><cs:dropLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="9525"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill><a:prstDash val="dash"/></a:ln></cs:spPr></cs:dropLine><cs:errorBar><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:errorBar><cs:floor><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef></cs:floor><cs:gridlineMajor><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="10000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:gridlineMajor><cs:gridlineMinor><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="5000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr></cs:gridlineMinor><cs:hiLoLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="9525"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill><a:prstDash val="dash"/></a:ln></cs:spPr></cs:hiLoLine><cs:leaderLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="9525"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr></cs:leaderLine><cs:legend><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:legend><cs:plotArea><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef></cs:plotArea><cs:plotArea3D><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef></cs:plotArea3D><cs:seriesAxis><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></cs:fontRef><cs:spPr><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr><cs:defRPr sz="900" kern="1200"/></cs:seriesAxis><cs:seriesLine><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="9525" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill><a:round/></a:ln></cs:spPr></cs:seriesLine><cs:title><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="95000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="1600" b="1" kern="1200" spc="100" baseline="0"><a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="5400000" algn="t" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst></cs:defRPr></cs:title><cs:trendline><cs:lnRef idx="0"><cs:styleClr val="auto"/></cs:lnRef><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:ln w="19050" cap="rnd"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></cs:spPr></cs:trendline><cs:trendlineLabel><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:trendlineLabel><cs:upBar><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef><cs:spPr><a:solidFill><a:schemeClr val="lt1"/></a:solidFill><a:ln w="9525"><a:solidFill><a:schemeClr val="lt1"><a:lumMod val="95000"/><a:alpha val="54000"/></a:schemeClr></a:solidFill></a:ln></cs:spPr></cs:upBar><cs:valueAxis><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"><a:lumMod val="85000"/></a:schemeClr></cs:fontRef><cs:defRPr sz="900" kern="1200"/></cs:valueAxis><cs:wall><cs:lnRef idx="0"/><cs:fillRef idx="0"/><cs:effectRef idx="0"/><cs:fontRef idx="minor"><a:schemeClr val="lt1"/></cs:fontRef></cs:wall></cs:chartStyle>'
+_TPL_COLORS1       = '<cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" meth="cycle" id="10"><a:schemeClr val="accent1"/><a:schemeClr val="accent2"/><a:schemeClr val="accent3"/><a:schemeClr val="accent4"/><a:schemeClr val="accent5"/><a:schemeClr val="accent6"/><cs:variation/><cs:variation><a:lumMod val="60000"/></cs:variation><cs:variation><a:lumMod val="80000"/><a:lumOff val="20000"/></cs:variation><cs:variation><a:lumMod val="80000"/></cs:variation><cs:variation><a:lumMod val="60000"/><a:lumOff val="40000"/></cs:variation><cs:variation><a:lumMod val="50000"/></cs:variation><cs:variation><a:lumMod val="70000"/><a:lumOff val="30000"/></cs:variation><cs:variation><a:lumMod val="70000"/></cs:variation><cs:variation><a:lumMod val="50000"/><a:lumOff val="50000"/></cs:variation></cs:colorStyle>'
+
+
+def _applica_tema_scuro(xlsx_bytes, titoli_per_grafico):
+    """
+    Post-processa i grafici generati da openpyxl:
+    - Sostituisce la sezione style/catAx/valAx/dTable con quella del template
+    - Aggiunge style1.xml e colors1.xml per il tema scuro
+    - titoli_per_grafico: dict {chart_filename: titolo}
+    """
+    import zipfile, re as _re
+
     inp = io.BytesIO(xlsx_bytes)
     out = io.BytesIO()
 
-    CHART_SPPR  = ('<c:spPr xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
-                   ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
-                   '<a:solidFill><a:srgbClr val="1F1F1F"/></a:solidFill>'
-                   '<a:ln><a:solidFill><a:srgbClr val="1F1F1F"/></a:solidFill></a:ln>'
-                   '</c:spPr>')
-    PLOT_SPPR   = ('<c:spPr xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
-                   ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
-                   '<a:solidFill><a:srgbClr val="2D2D2D"/></a:solidFill>'
-                   '</c:spPr>')
-
     with zipfile.ZipFile(inp, "r") as zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        existing = set(zin.namelist())
+        chart_idx = 0
+
         for item in zin.infolist():
             data = zin.read(item.filename)
+
             if item.filename.startswith("xl/charts/chart") and item.filename.endswith(".xml"):
                 xml = data.decode("utf-8")
-                # Sfondo esterno (chartSpace)
-                xml = xml.replace("<chart>", CHART_SPPR + "<chart>", 1)
-                # Sfondo area plot
-                xml = xml.replace("</c:plotArea>", PLOT_SPPR + "</c:plotArea>", 1)
+
+                # 1. Sostituisci AlternateContent (stile 209 scuro)
+                xml = _re.sub(
+                    r'<mc:AlternateContent.*?</mc:AlternateContent>',
+                    _TPL_ALTCONTENT, xml, flags=_re.DOTALL
+                )
+
+                # 2. Sostituisci titolo con quello corretto per questo grafico
+                chart_name = item.filename.split("/")[-1]
+                titolo = titoli_per_grafico.get(chart_name, "Confronto Prezzi Carburanti")
+                title_xml = _TPL_TITLE.replace("__TITLE__", titolo)
+                xml = _re.sub(r'<c:title>.*?</c:title>', title_xml, xml, flags=_re.DOTALL)
+
+                # 3. Sostituisci catAx con quello del template (etichette ruotate, stile scuro)
+                xml = _re.sub(r'<c:catAx>.*?</c:catAx>', _TPL_CATAX, xml, flags=_re.DOTALL)
+
+                # 4. Sostituisci valAx con quello del template (min=0.5, formato 0.000, stile scuro)
+                xml = _re.sub(r'<c:valAx>.*?</c:valAx>', _TPL_VALAX, xml, flags=_re.DOTALL)
+
+                # 5. Sostituisci dTable con quello del template
+                xml = _re.sub(r'<c:dTable>.*?</c:dTable>', _TPL_DTABLE, xml, flags=_re.DOTALL)
+
+                # 6. Sostituisci spPr finale del chartSpace (sfondo gradiente scuro)
+                xml = _re.sub(
+                    r'(</c:chart>)<c:spPr>.*?</c:spPr>',
+                    r'\1' + _TPL_CHARTSPACE_SPPR, xml, flags=_re.DOTALL
+                )
+
                 data = xml.encode("utf-8")
+                chart_idx += 1
+
+                # Aggiungi style1.xml e colors1.xml per questo grafico
+                chart_num = _re.search(r'chart(\d+)\.xml', item.filename)
+                if chart_num:
+                    n = chart_num.group(1)
+                    style_path  = f"xl/charts/style{n}.xml"
+                    colors_path = f"xl/charts/colors{n}.xml"
+                    if style_path not in existing:
+                        zout.writestr(style_path,  _TPL_STYLE1.encode())
+                        existing.add(style_path)
+                    if colors_path not in existing:
+                        zout.writestr(colors_path, _TPL_COLORS1.encode())
+                        existing.add(colors_path)
+
+                    # Aggiorna _rels per includere style e colors
+                    rels_path = f"xl/charts/_rels/chart{n}.xml.rels"
+                    if rels_path in existing:
+                        rels_data = zin.read(rels_path).decode()
+                        if "style" not in rels_data:
+                            style_rel = (
+                                '<Relationship Id="rIdStyle" '
+                                'Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" '
+                                f'Target="style{n}.xml"/>'
+                                '<Relationship Id="rIdColors" '
+                                'Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" '
+                                f'Target="colors{n}.xml"/>'
+                            )
+                            rels_data = rels_data.replace("</Relationships>", style_rel + "</Relationships>")
+                            zout.writestr(rels_path, rels_data.encode())
+                            existing.add(rels_path)
+                            continue  # già scritto
+
             zout.writestr(item, data)
 
     out.seek(0)
