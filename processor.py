@@ -335,9 +335,13 @@ def processa_excel(file_bytes, filename="file.xls"):
             from openpyxl.chart.plotarea import DataTable
             chart.plot_area.dTable = DataTable(showHorzBorder=True, showVertBorder=True, showOutline=True, showKeys=True)
 
-            # Categories
-            cats = Reference(ws_g, min_col=2, max_col=n_punti + 1, min_row=1, max_row=1)
-            chart.set_categories(cats)
+            # Categorie testuali embedded (StrRef) per mostrare le etichette nel grafico
+            from openpyxl.chart.data_source import StrRef, StrVal, StrData, AxDataSource
+            lbl_pts = []
+            for ci in range(2, n_punti + 2):
+                v = ws_g.cell(1, ci).value or ""
+                lbl_pts.append(StrVal(idx=ci - 2, v=str(v)))
+            ax_src = AxDataSource(strRef=StrRef(strCache=StrData(ptCount=len(lbl_pts), pt=lbl_pts)))
 
             for s_idx, (orig_idx, nome_carb) in enumerate(carb_attivi):
                 riga_g = s_idx + 2
@@ -358,6 +362,7 @@ def processa_excel(file_bytes, filename="file.xls"):
                 ser = Series(data_ref, title=nome_carb)
                 ser.graphicalProperties.solidFill = colore_carb
                 ser.graphicalProperties.line.solidFill = colore_carb
+                ser.cat = ax_src
 
                 # Data labels: mostra solo min, max e MEDIA (ultima colonna)
                 labels = []
