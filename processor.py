@@ -388,13 +388,13 @@ def processa_excel(file_bytes, filename="file.xls"):
                     if is_max or is_min or is_media:
                         if is_max:
                             txPr = _make_label_txpr("FFFFFF", bold=True)
-                            spPr = _make_label_sppr("FF0000")
+                            spPr = _make_label_sppr(bg="FF0000", border="FFFFFF")
                         elif is_min:
                             txPr = _make_label_txpr("000000", bold=True)
-                            spPr = _make_label_sppr("00FF00")
+                            spPr = _make_label_sppr(bg="00FF00", border="000000")
                         else:  # media
                             txPr = _make_label_txpr("FF0000", bold=True, italic=True)
-                            spPr = _make_label_sppr("FFFF00")
+                            spPr = _make_label_sppr(bg="FFFF00", border="FF0000")
 
                         dl = DataLabel(
                             idx=pt_idx,
@@ -438,7 +438,55 @@ def processa_excel(file_bytes, filename="file.xls"):
 
 
 def _applica_tema_scuro(xlsx_bytes):
-    return xlsx_bytes
+    """
+    Post-processa i grafici per aggiungere bordi arrotondati alle etichette dati.
+    openpyxl non supporta prstGeom/roundRect nelle DataLabel, quindi lo aggiungiamo via XML.
+    """
+    import zipfile, re as _re
+
+    # Pattern etichette colorate (max=rosso, min=verde, media=giallo)
+    # Aggiunge c15:spPr con roundRect dopo ogni <c:spPr> nelle dLbl colorate
+    LABEL_CONFIGS = [
+        # (colore_sfondo, colore_bordo)
+        ("FF0000", "FFFFFF"),  # max: rosso, bordo bianco
+        ("00FF00", "000000"),  # min: verde, bordo nero
+        ("FFFF00", "FF0000"),  # media: giallo, bordo rosso
+    ]
+
+    def _c15_sppr():
+        return (
+            '<c15:spPr xmlns:c15="http://schemas.microsoft.com/office/drawing/2012/chart">'
+            '<a:prstGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" prst="roundRect">'
+            '<a:avLst/></a:prstGeom><a:noFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>'
+            '<a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:noFill/></a:ln>'
+            '</c15:spPr>'
+        )
+
+    inp = io.BytesIO(xlsx_bytes)
+    out = io.BytesIO()
+
+    with zipfile.ZipFile(inp, "r") as zin, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename.startswith("xl/charts/chart") and item.filename.endswith(".xml"):
+                xml = data.decode("utf-8")
+
+                # Per ogni etichetta colorata, aggiungi c15:spPr con roundRect dentro c:extLst
+                for bg, border in LABEL_CONFIGS:
+                    # Trova il blocco <c:dLbl> che contiene questo colore di sfondo
+                    pattern = (
+                        rf'(<c:dLbl>(?:(?!</c:dLbl>).)*?'
+                        rf'<a:srgbClr val="{bg}"/>(?:(?!</c:dLbl>).)*?)'
+                        rf'(<c:extLst>)'
+                    )
+                    replacement = rf'<c15:spPr xmlns:c15="http://schemas.microsoft.com/office/drawing/2012/chart"><a:prstGeom xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" prst="roundRect"><a:avLst/></a:prstGeom><a:noFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/><a:ln xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:noFill/></a:ln></c15:spPr>'
+                    xml = _re.sub(pattern, replacement, xml, flags=_re.DOTALL)
+
+                data = xml.encode("utf-8")
+            zout.writestr(item, data)
+
+    out.seek(0)
+    return out.read()
 
 
 # ── Helpers per stile etichette dati ────────────────────────────────────────
@@ -451,6 +499,17 @@ def _make_label_txpr(hex_color, bold=False, italic=False):
     return RichText(p=[p])
 
 
-def _make_label_sppr(bg_hex):
+def _make_label_sppr(bg="FF0000", border="FFFFFF"):
+    """
+    Restituisce un GraphicalProperties con sfondo colorato.
+    Il bordo arrotondato (roundRect) viene aggiunto via post-processing XML.
+    Salviamo bg e border come attributi custom per usarli dopo.
+    """
     from openpyxl.chart.shapes import GraphicalProperties
-    return GraphicalProperties(solidFill=bg_hex)
+    from openpyxl.drawing.line import LineProperties
+    gp = GraphicalProperties(solidFill=bg)
+    gp.ln = LineProperties(solidFill=border)
+    # Teniamo traccia dei colori per il post-processing
+    gp._bg = bg
+    gp._border = border
+    return gp
